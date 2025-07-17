@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Расчет пробега техники</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=a4dfa958-611e-48ed-b292-9af517b77989&lang=ru_RU" type="text/javascript"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; }
+        #panel { padding: 10px; background: #f5f5f5; display: flex; gap: 10px; align-items: center; }
+        #map { width: 100%; height: 90vh; }
+    </style>
+</head>
+<body>
+<div id="panel">
+    <input type="text" id="address" placeholder="Введите адрес назначения" size="40">
+    <select id="category">
+        <option value="B">Категория B</option>
+        <option value="C1">Категория C1</option>
+        <option value="C">Категория C</option>
+    </select>
+    <button onclick="calculateRoute()">Рассчитать</button>
+    <div id="result"></div>
+</div>
+<div id="map"></div>
+
+<script>
+ymaps.ready(init);
+
+const bases = {
+    msk_yug: { name: "МСК ЮГ", coords: [55.344879, 37.229408] },
+    msk_sever: { name: "МСК СЕВЕР", coords: [55.919849, 37.831573] },
+    spb: { name: "СПБ", coords: [59.871399, 30.264351] },
+    mkad: { name: "МКАД", coords: [55.751244, 37.618423] },
+    kad: { name: "КАД", coords: [59.9342802, 30.3350986] }
+};
+
+let map, multiRoute;
+
+function init() {
+    map = new ymaps.Map("map", {
+        center: [55.75, 37.57],
+        zoom: 6
+    });
+}
+
+async function calculateRoute() {
+    const address = document.getElementById("address").value;
+    const category = document.getElementById("category").value;
+    if (!address) return alert("Введите адрес");
+
+    const geo = await ymaps.geocode(address);
+    const destCoords = geo.geoObjects.get(0).geometry.getCoordinates();
+
+    const allDistances = {};
+    for (const [key, base] of Object.entries(bases)) {
+        const route = await ymaps.route([base.coords, destCoords]);
+        const km = route.getLength() / 1000;
+        allDistances[key] = { distance: km, coords: base.coords, name: base.name, route };
+    }
+
+    let selectedBaseKey = "msk_yug";
+    let usedDistance = 0;
+    let cost = 0;
+
+    if (category === "C") {
+        // всегда от МСК ЮГ
+        usedDistance = allDistances["msk_yug"].distance;
+        selectedBaseKey = "msk_yug";
+
+        if (usedDistance <= 10 || allDistances["mkad"].distance <= 10) cost = 0;
+        else if (usedDistance <= 40) cost = usedDistance * 66;
+        else if (usedDistance <= 81) cost = usedDistance * 99;
+        else cost = usedDistance * 133;
+    } else {
+        // B и C1 — минимальное из МКАД, ЮГ, СЕВЕР
+        const keys = ["mkad", "msk_yug", "msk_sever"];
+        const min = keys.reduce((a, b) => allDistances[a].distance < allDistances[b].distance ? a : b);
+        selectedBaseKey = min;
+        usedDistance = allDistances[min].distance;
+
+        if ((min === "mkad" && usedDistance <= 30) || (min !== "mkad" && usedDistance <= 80)) {
+            cost = 0;
+        } else if (usedDistance <= 40) {
+            cost = usedDistance * 35;
+        } else if (usedDistance <= 81) {
+            cost = usedDistance * 52;
+        } else {
+            cost = usedDistance * 68;
+        }
+    }
+
+    const selected = allDistances[selectedBaseKey];
+
+    document.getElementById("result").innerText =
+        `Ближайшая база: ${selected.name}. Расстояние: ${usedDistance.toFixed(1)} км. Стоимость: ${Math.round(cost)} руб.`;
+
+    if (multiRoute) map.geoObjects.remove(multiRoute);
+    multiRoute = selected.route;
+    map.geoObjects.add(multiRoute);
+    map.setBounds(multiRoute.getBounds(), { checkZoomRange: true });
+}
+</script>
+</body>
+</html>
