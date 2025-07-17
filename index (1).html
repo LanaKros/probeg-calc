@@ -1,0 +1,98 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Расчёт пробега техники</title>
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=4dcad70a-93f5-4f97-b94f-8d76d832e6ad" type="text/javascript"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
+        #controls { margin-bottom: 15px; display: flex; gap: 10px; }
+        #map { width: 100%; height: 500px; margin-top: 15px; }
+        input, select, button { padding: 8px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <input type="text" id="destination" placeholder="Адрес назначения (например, СПБ, Конюшенная)" size="50">
+        <select id="category">
+            <option value="B">Категория B</option>
+            <option value="C">Категория C</option>
+        </select>
+        <button onclick="calculateBestRoute()">Рассчитать</button>
+    </div>
+    <div id="result"></div>
+    <div id="map"></div>
+
+    <script>
+        const BASE_POINTS = [
+            { name: 'СПБ База (Трефолева)', coords: [59.84660399, 30.29496392] },
+            { name: 'МСК Юг', coords: [55.574371, 37.6517] },
+            { name: 'МСК Север', coords: [55.874371, 37.4417] }
+        ];
+
+        const RATES = {
+            B: 35,
+            C: 50
+        };
+
+        ymaps.ready(initMap);
+        let myMap, routeLine;
+
+        function initMap() {
+            myMap = new ymaps.Map("map", {
+                center: [55.76, 37.64],
+                zoom: 5
+            });
+        }
+
+        async function calculateBestRoute() {
+            const destination = document.getElementById('destination').value;
+            const category = document.getElementById('category').value;
+            if (!destination) return alert("Введите адрес назначения");
+
+            const destCoords = await geocode(destination);
+            if (!destCoords) return alert("Не удалось геокодировать адрес");
+
+            let best = null;
+
+            for (const base of BASE_POINTS) {
+                try {
+                    const route = await ymaps.route([base.coords, destCoords]);
+                    const distance = route.getLength() / 1000;
+                    if (!best || distance < best.distance) {
+                        best = { base, route, distance };
+                    }
+                } catch (e) {
+                    console.warn("Маршрут не построен от:", base.name);
+                }
+            }
+
+            if (best) {
+                myMap.geoObjects.removeAll();
+                myMap.geoObjects.add(best.route);
+                myMap.setBounds(best.route.getBounds(), { checkZoomRange: true });
+
+                const cost = best.distance * RATES[category];
+                document.getElementById('result').innerHTML = `
+                    <p><strong>Откуда:</strong> ${best.base.name}</p>
+                    <p><strong>Расстояние:</strong> ${best.distance.toFixed(2)} км</p>
+                    <p><strong>Стоимость:</strong> ${cost.toFixed(2)} ₽</p>
+                `;
+            } else {
+                alert("Не удалось построить маршрут от баз до назначения");
+            }
+        }
+
+        async function geocode(address) {
+            try {
+                const res = await ymaps.geocode(address);
+                const coords = res.geoObjects.get(0)?.geometry?.getCoordinates();
+                return coords || null;
+            } catch (e) {
+                return null;
+            }
+        }
+    </script>
+</body>
+</html>
