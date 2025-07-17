@@ -2,44 +2,103 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Расчёт пробега техники</title>
+    <meta charset="UTF-8" />
+    <title>Калькулятор пробега техники</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        html, body, #map {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
+        html, body { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+        #map { width: 100%; height: 500px; }
+        .form-container {
+            padding: 20px;
+            background: #f5f5f5;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-container input, .form-container select {
+            padding: 8px;
+            margin: 5px;
+            width: 300px;
+        }
+        .form-container button {
+            padding: 8px 16px;
         }
     </style>
+    <script src="https://api-maps.yandex.ru/v3/?apikey=<YOUR_API_KEY>&lang=ru_RU"></script>
 </head>
 <body>
+    <div class="form-container">
+        <input id="start" placeholder="Адрес отправления (например, СПб, Трефолева 42)" />
+        <input id="end" placeholder="Адрес назначения (например, СПб, Конюшенная пл. 2Г)" />
+        <select id="category">
+            <option value="A">Категория A</option>
+            <option value="B" selected>Категория B</option>
+            <option value="C">Категория C</option>
+        </select>
+        <button onclick="calculateRoute()">Рассчитать</button>
+        <div id="result"></div>
+    </div>
     <div id="map"></div>
 
     <script type="module">
-        import {ymaps3} from "https://api-maps.yandex.ru/v3/?apikey=a4dfa958-611e-48ed-b292-9af517b77989&lang=ru_RU";
+        import {geocode} from "https://cdn.jsdelivr.net/npm/@yandex/ymaps3-router@0.0.2-beta/router.esm.js";
+
+        const tariffs = { A: 20, B: 30, C: 40 }; // руб/км по категориям
+
+        let map, markerStart, markerEnd, routeLine;
 
         ymaps3.ready.then(async () => {
-            const {YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapMarker} = ymaps3;
+            const {YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapFeature, YMapDefaultMarker} = ymaps3;
 
-            const map = new YMap(document.getElementById('map'), {
+            map = new YMap(document.getElementById('map'), {
                 location: {
-                    center: [30.2816, 59.8845], // База СПБ
+                    center: [30.315635, 59.938951], // центр СПб
                     zoom: 10
                 }
             });
-
             map.addChild(new YMapDefaultSchemeLayer());
             map.addChild(new YMapDefaultFeaturesLayer());
 
-            // Добавим точку базы
-            const marker = new YMapMarker({
-                coordinates: [30.2816, 59.8845]
-            });
+            markerStart = new YMapDefaultMarker({coordinates: [30.315635, 59.938951], color: "green"});
+            markerEnd = new YMapDefaultMarker({coordinates: [30.315635, 59.938951], color: "red"});
+            routeLine = new YMapFeature({geometry: {type: "LineString", coordinates: []}});
 
-            map.addChild(marker);
+            map.addChild(markerStart).addChild(markerEnd).addChild(routeLine);
         });
+
+        async function calculateRoute() {
+            const startAddress = document.getElementById("start").value;
+            const endAddress = document.getElementById("end").value;
+            const category = document.getElementById("category").value;
+
+            if (!startAddress || !endAddress) return alert("Введите оба адреса");
+
+            try {
+                const startCoords = await getCoords(startAddress);
+                const endCoords = await getCoords(endAddress);
+
+                markerStart.update({coordinates: startCoords});
+                markerEnd.update({coordinates: endCoords});
+
+                const res = await fetch(`https://api.routing.yandex.net/v2/route?apikey=<YOUR_API_KEY>&waypoints=${startCoords.join(',')}~${endCoords.join(',')}&mode=auto`);
+                const data = await res.json();
+                const distance = data.routes[0].legs.reduce((sum, leg) => sum + leg.length.value, 0) / 1000; // in km
+                const cost = Math.round(distance * tariffs[category]);
+
+                routeLine.update({geometry: {type: "LineString", coordinates: data.routes[0].geometry.coordinates}});
+                map.setLocation({bounds: data.routes[0].bounds});
+
+                document.getElementById("result").innerText = `Расстояние: ${distance.toFixed(2)} км, Стоимость: ${cost} руб.`;
+            } catch (err) {
+                console.error(err);
+                alert("Не удалось построить маршрут");
+            }
+        }
+
+        async function getCoords(address) {
+            const res = await fetch(`https://geocode-maps.yandex.ru/1.x/?apikey=<YOUR_API_KEY>&format=json&geocode=${encodeURIComponent(address)}`);
+            const data = await res.json();
+            const pos = data.response.GeoObjectCollection.featureMember[0].GeoObject.Point.pos.split(" ");
+            return [parseFloat(pos[0]), parseFloat(pos[1])];
+        }
     </script>
 </body>
 </html>
