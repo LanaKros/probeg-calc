@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Расчёт пробега техники</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    #controls {
+      display: flex; align-items: center; padding: 10px; background: #f5f5f5;
+    }
+    #map { width: 100%; height: 90vh; }
+    input, select, button {
+      margin-right: 10px;
+      padding: 5px;
+    }
+  </style>
+  <script src="https://api-maps.yandex.ru/2.1/?apikey=a4dfa958-611e-48ed-b292-9af517b70298&lang=ru_RU" type="text/javascript"></script>
+</head>
+<body>
+  <div id="controls">
+    <input type="text" id="address" placeholder="Введите адрес назначения" />
+    <select id="category">
+      <option>Категория B</option>
+      <option>Категория C1</option>
+      <option>Категория C</option>
+    </select>
+    <button onclick="calculate()">Рассчитать</button>
+    <span id="result"></span>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    ymaps.ready(init);
+    let map, routeLine;
+
+    const bases = {
+      "МКАД": [55.751244, 37.618423],
+      "КАД СПб": [59.934280, 30.335099],
+      "МСК ЮГ": [55.331552, 37.165565],
+      "МСК СЕВЕР": [55.913669, 37.825745],
+      "СПб": [59.855682, 30.264221]
+    };
+
+    function init() {
+      map = new ymaps.Map("map", {
+        center: [55.76, 37.64],
+        zoom: 5
+      });
+
+      for (const name in bases) {
+        map.geoObjects.add(new ymaps.Placemark(bases[name], { iconCaption: name }));
+      }
+    }
+
+    async function calculate() {
+      const address = document.getElementById("address").value;
+      const category = document.getElementById("category").value;
+
+      const toCoords = await geocode(address);
+      if (!toCoords) {
+        alert("Адрес не найден");
+        return;
+      }
+
+      map.setCenter(toCoords, 10);
+
+      // Определим ближайшую базу
+      let nearest = { name: "", coords: null, dist: Infinity };
+      for (const [name, coords] of Object.entries(bases)) {
+        const d = distance(coords, toCoords);
+        if (d < nearest.dist) {
+          nearest = { name, coords, dist: d };
+        }
+      }
+
+      if (routeLine) map.geoObjects.remove(routeLine);
+
+      const route = await ymaps.route([nearest.coords, toCoords]);
+      routeLine = route.getPaths();
+      map.geoObjects.add(route);
+
+      const length = route.properties.get("distance").value / 1000;
+
+      let cost = 0;
+
+      if (category === "Категория B" || category === "Категория C1") {
+        const mkadDist = distance([55.751244, 37.618423], toCoords);
+        const baseDist = nearest.name.startsWith("МСК") ? length : Infinity;
+        const compareDist = Math.min(mkadDist, baseDist);
+
+        if (compareDist > 81) cost = compareDist * 68;
+        else if (compareDist > 40) cost = compareDist * 52;
+        else if (compareDist > 30) cost = compareDist * 35;
+      } else if (category === "Категория C") {
+        if (nearest.name === "СПб" && nearest.dist <= 80) {
+          cost = 0;
+        } else {
+          if (length > 81) cost = length * 133;
+          else if (length > 40) cost = length * 99;
+          else if (length > 10) cost = length * 66;
+        }
+      }
+
+      document.getElementById("result").innerText =
+        `Ближайшая база: ${nearest.name}. Расстояние: ${length.toFixed(1)} км. Стоимость: ${Math.round(cost)} руб.`;
+    }
+
+    async function geocode(address) {
+      const result = await ymaps.geocode(address);
+      if (result.geoObjects.getLength()) {
+        return result.geoObjects.get(0).geometry.getCoordinates();
+      }
+      return null;
+    }
+
+    function distance(coord1, coord2) {
+      const R = 6371;
+      const dLat = (coord2[0] - coord1[0]) * Math.PI / 180;
+      const dLon = (coord2[1] - coord1[1]) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(coord1[0] * Math.PI / 180) *
+        Math.cos(coord2[0] * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+  </script>
+</body>
+</html>
