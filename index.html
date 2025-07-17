@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Расчет стоимости пробега техники</title>
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=a4dfa958-611e-48ed-b292-9af517b77989" type="text/javascript"></script>
+    <style>
+        html, body, #map {
+            width: 100%; height: 90%; padding: 0; margin: 0;
+        }
+        #controls {
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <input type="text" id="address" placeholder="Введите адрес назначения" />
+        <select id="category">
+            <option value="B">Категория B</option>
+            <option value="C1">Категория C1</option>
+            <option value="C">Категория C</option>
+        </select>
+        <button onclick="calculateRoute()">Рассчитать</button>
+        <div id="result"></div>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        ymaps.ready(init);
+
+        const bases = {
+            "МСК ЮГ": [55.394497, 37.331047],
+            "МСК СЕВЕР": [55.916435, 37.837127],
+            "СПБ": [59.857489, 30.252386],
+            "МКАД": [55.751244, 37.618423], // Центр Москвы
+            "КАД": [59.9342802, 30.3350986] // Центр Питера
+        };
+
+        let map;
+
+        function init() {
+            map = new ymaps.Map("map", {
+                center: bases["МСК ЮГ"],
+                zoom: 5
+            });
+        }
+
+        function calculateRoute() {
+            const toAddress = document.getElementById('address').value;
+            const category = document.getElementById('category').value;
+
+            ymaps.geocode(toAddress).then(function (res) {
+                const toCoords = res.geoObjects.get(0).geometry.getCoordinates();
+
+                // Find closest base (simplified)
+                const distances = {};
+                for (const [key, coords] of Object.entries(bases)) {
+                    distances[key] = ymaps.coordSystem.geo.getDistance(coords, toCoords);
+                }
+
+                let closestBase = Object.entries(distances).sort((a, b) => a[1] - b[1])[0];
+                let baseName = closestBase[0];
+                let baseCoords = bases[baseName];
+                let distanceKm = (closestBase[1] / 1000).toFixed(1);
+
+                let cost = 0;
+                let distance = parseFloat(distanceKm);
+
+                if (category === 'C') {
+                    if (distance <= 10 && (baseName === 'МСК ЮГ' || baseName === 'МКАД')) {
+                        cost = 0;
+                    } else if (distance <= 40) {
+                        cost = distance * 66;
+                    } else if (distance <= 81) {
+                        cost = distance * 99;
+                    } else {
+                        cost = distance * 133;
+                    }
+                } else {
+                    if ((baseName === 'МКАД' && distance <= 30) || 
+                        ((baseName === 'МСК СЕВЕР' || baseName === 'МСК ЮГ') && distance <= 80)) {
+                        cost = 0;
+                    } else if (distance <= 40) {
+                        cost = distance * 35;
+                    } else if (distance <= 81) {
+                        cost = distance * 52;
+                    } else {
+                        cost = distance * 68;
+                    }
+                }
+
+                map.geoObjects.removeAll();
+
+                ymaps.route([baseCoords, toCoords]).then(function (route) {
+                    map.geoObjects.add(route);
+                    map.setBounds(route.getBounds());
+                });
+
+                document.getElementById('result').innerText = 
+                    `Ближайшая база: ${baseName}, расстояние: ${distanceKm} км, стоимость: ${cost.toFixed(2)} руб.`;
+            });
+        }
+    </script>
+</body>
+</html>
