@@ -1,97 +1,106 @@
 
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Расчёт пробега техники</title>
-    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=4dcad70a-93f5-4f97-b94f-8d76d832e6ad" type="text/javascript"></script>
+    <meta charset="utf-8">
+    <title>Расчет стоимости пробега техники</title>
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=a4dfa958-611e-48ed-b292-9af517b77989" type="text/javascript"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f8f8f8; }
-        #controls { margin-bottom: 15px; display: flex; gap: 10px; }
-        #map { width: 100%; height: 500px; margin-top: 15px; }
-        input, select, button { padding: 8px; font-size: 14px; }
+        html, body, #map {
+            width: 100%; height: 90%; padding: 0; margin: 0;
+        }
+        #controls {
+            padding: 10px;
+        }
     </style>
 </head>
 <body>
     <div id="controls">
-        <input type="text" id="destination" placeholder="Адрес назначения (например, СПБ, Конюшенная)" size="50">
+        <input type="text" id="address" placeholder="Введите адрес назначения" />
         <select id="category">
             <option value="B">Категория B</option>
+            <option value="C1">Категория C1</option>
             <option value="C">Категория C</option>
         </select>
-        <button onclick="calculateBestRoute()">Рассчитать</button>
+        <button onclick="calculateRoute()">Рассчитать</button>
+        <div id="result"></div>
     </div>
-    <div id="result"></div>
     <div id="map"></div>
 
     <script>
-        const BASE_POINTS = [
-            { name: 'СПБ База (Трефолева)', coords: [59.84660399, 30.29496392] },
-            { name: 'МСК Юг', coords: [55.574371, 37.6517] },
-            { name: 'МСК Север', coords: [55.874371, 37.4417] }
-        ];
+        ymaps.ready(init);
 
-        const RATES = {
-            B: 35,
-            C: 50
+        const bases = {
+            "МСК ЮГ": [55.394497, 37.331047],
+            "МСК СЕВЕР": [55.916435, 37.837127],
+            "СПБ": [59.857489, 30.252386],
+            "МКАД": [55.751244, 37.618423], // Центр Москвы
+            "КАД": [59.9342802, 30.3350986] // Центр Питера
         };
 
-        ymaps.ready(initMap);
-        let myMap, routeLine;
+        let map;
 
-        function initMap() {
-            myMap = new ymaps.Map("map", {
-                center: [55.76, 37.64],
+        function init() {
+            map = new ymaps.Map("map", {
+                center: bases["МСК ЮГ"],
                 zoom: 5
             });
         }
 
-        async function calculateBestRoute() {
-            const destination = document.getElementById('destination').value;
+        function calculateRoute() {
+            const toAddress = document.getElementById('address').value;
             const category = document.getElementById('category').value;
-            if (!destination) return alert("Введите адрес назначения");
 
-            const destCoords = await geocode(destination);
-            if (!destCoords) return alert("Не удалось геокодировать адрес");
+            ymaps.geocode(toAddress).then(function (res) {
+                const toCoords = res.geoObjects.get(0).geometry.getCoordinates();
 
-            let best = null;
-
-            for (const base of BASE_POINTS) {
-                try {
-                    const route = await ymaps.route([base.coords, destCoords]);
-                    const distance = route.getLength() / 1000;
-                    if (!best || distance < best.distance) {
-                        best = { base, route, distance };
-                    }
-                } catch (e) {
-                    console.warn("Маршрут не построен от:", base.name);
+                // Find closest base (simplified)
+                const distances = {};
+                for (const [key, coords] of Object.entries(bases)) {
+                    distances[key] = ymaps.coordSystem.geo.getDistance(coords, toCoords);
                 }
-            }
 
-            if (best) {
-                myMap.geoObjects.removeAll();
-                myMap.geoObjects.add(best.route);
-                myMap.setBounds(best.route.getBounds(), { checkZoomRange: true });
+                let closestBase = Object.entries(distances).sort((a, b) => a[1] - b[1])[0];
+                let baseName = closestBase[0];
+                let baseCoords = bases[baseName];
+                let distanceKm = (closestBase[1] / 1000).toFixed(1);
 
-                const cost = best.distance * RATES[category];
-                document.getElementById('result').innerHTML = `
-                    <p><strong>Откуда:</strong> ${best.base.name}</p>
-                    <p><strong>Расстояние:</strong> ${best.distance.toFixed(2)} км</p>
-                    <p><strong>Стоимость:</strong> ${cost.toFixed(2)} ₽</p>
-                `;
-            } else {
-                alert("Не удалось построить маршрут от баз до назначения");
-            }
-        }
+                let cost = 0;
+                let distance = parseFloat(distanceKm);
 
-        async function geocode(address) {
-            try {
-                const res = await ymaps.geocode(address);
-                const coords = res.geoObjects.get(0)?.geometry?.getCoordinates();
-                return coords || null;
-            } catch (e) {
-                return null;
-            }
+                if (category === 'C') {
+                    if (distance <= 10 && (baseName === 'МСК ЮГ' || baseName === 'МКАД')) {
+                        cost = 0;
+                    } else if (distance <= 40) {
+                        cost = distance * 66;
+                    } else if (distance <= 81) {
+                        cost = distance * 99;
+                    } else {
+                        cost = distance * 133;
+                    }
+                } else {
+                    if ((baseName === 'МКАД' && distance <= 30) || 
+                        ((baseName === 'МСК СЕВЕР' || baseName === 'МСК ЮГ') && distance <= 80)) {
+                        cost = 0;
+                    } else if (distance <= 40) {
+                        cost = distance * 35;
+                    } else if (distance <= 81) {
+                        cost = distance * 52;
+                    } else {
+                        cost = distance * 68;
+                    }
+                }
+
+                map.geoObjects.removeAll();
+
+                ymaps.route([baseCoords, toCoords]).then(function (route) {
+                    map.geoObjects.add(route);
+                    map.setBounds(route.getBounds());
+                });
+
+                document.getElementById('result').innerText = 
+                    `Ближайшая база: ${baseName}, расстояние: ${distanceKm} км, стоимость: ${cost.toFixed(2)} руб.`;
+            });
         }
     </script>
 </body>
