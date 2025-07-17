@@ -1,0 +1,45 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Расчёт пробега техники</title>
+    <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script type="module">
+        import {ymaps3} from "https://api-maps.yandex.ru/v3/?apikey=a4dfa958-611e-48ed-b292-9af517b77989&lang=ru_RU";
+
+        ymaps3.ready.then(async () => {
+            const {YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapMarker} = ymaps3;
+
+            const map = new YMap(document.getElementById('map'), {
+                location: {
+                    center: [30.2816, 59.8845], // База СПБ
+                    zoom: 10
+                }
+            });
+
+            map.addChild(new YMapDefaultSchemeLayer());
+            map.addChild(new YMapDefaultFeaturesLayer());
+
+            // Добавим точку базы
+            const marker = new YMapMarker({
+                coordinates: [30.2816, 59.8845]
+            });
+
+            map.addChild(marker);
+        });
+    </script>
+</body>
+</html>
